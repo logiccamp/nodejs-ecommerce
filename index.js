@@ -6,7 +6,7 @@ var bodyParse = require('body-parser');
 const mysql = require('mysql2');
 const session = require('express-session')
 const CartModule = require("./functions/Cart")
-
+const ejsLayout = require("express-ejs-layouts")
 
 var con = mysql.createConnection({host : process.env.DB_HOST, user : process.env.DB_USER, database : process.env.DB_NAME, password : process.env.DB_PASSWORD})
 
@@ -25,6 +25,8 @@ app.use(session({
 
 // for static
 app.use(express.static('public'));
+app.use(ejsLayout)
+app.set("layout", "layout")
 app.set('view engine', 'ejs');
 // app.use
 
@@ -125,6 +127,63 @@ app.post("/update-cart", (req, res) => {
     req.session.cart = cart;
     req.session.totalCart = total;
     res.send(true);
+})
+
+app.get("/checkout", (req, res) => {
+    var cart = req.session.cart ? req.session.cart : [];
+    var totalCart = req.session.totalCart ? req.session.totalCart : 0;
+
+    res.render("pages/checkout", {cart : cart, totalCart : totalCart})
+})
+
+app.post("/post-order", (req, res) => {
+    var name = req.body.name, email = req.body.email, city = req.body.city, address = req.body.address, cost = req.body.cost, status = 'not paid', data = new Date(), phone = req.body.phone;
+    var cost = req.session.totalCart ? req.session.totalCart : 0;
+    var cart = req.session.cart ? req.session.cart : [];
+
+    if(cart.length == 0 || cost == 0){
+        res.redirect('/cart');
+        return;
+    }
+    con.connect((err)=>{
+        if(err){
+            res.send("database error");
+            return;
+        }
+
+        var query = "INSERT INTO orders (cost, name, email, status, city, address, phone, date) values ?"
+        var values = [[cost, name, email, status, city, address, phone, data]]
+        con.query(query, [values], (err, result)=> {
+            if(err) {
+                res.send("database error")
+                return;
+            }
+            var order_id = result.insertId
+            cart.forEach(product => {
+                query = "INSERT INTO order_items (order_id, product_id, product_name, product_price, product_image, product_quantity, order_date) values ?"
+                values = [[order_id, product.id, product.name, product.price, product.image, product.quantity, data]] 
+                con.query(query, [values]);
+            });
+            res.redirect(`/payment/${order_id}`)
+        })
+    })
+})
+
+app.get("/payment/:order", (req, res) => {
+    console.log("here")
+    res.render("pages/payment", {total : "100"});
+})
+
+app.get("/payment", (req, res) => {
+    res.render("pages/payment", {total : 100});
+})
+
+app.get("/about", (req, res) => {
+    res.render("pages/about");
+})
+
+app.get("/contact", (req, res) => {
+    res.render("pages/contact");
 })
 
 app.get("*", (req, res) => {
